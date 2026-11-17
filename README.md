@@ -7,7 +7,7 @@ Render the daily Daf Yomi as a readable A4 PDF. Each daf is a linear sequence of
 3. The Vilna page for amud b.
 4. The English for amud b.
 
-There is no title page. The reader opens the file in single-page view (`/PageLayout` is `SinglePage`). Each Vilna sheet has a short footer naming the amud. When a tractate ends on an a-side (for example Bekhorot 61a), only that side is rendered.
+There is no title page. The reader opens the file in single-page view (`/PageLayout` is `SinglePage`). Each Vilna sheet has a short footer naming the amud. When the PDF is made for a calendar date (today, a given day, or a range), that study date is added to the footer on every Vilna and English page, for example "Bekhorot 60a · Daf Yomi, Tuesday 17 November 2026". With `--daf` and no date, the footer names only the amud. When a tractate ends on an a-side (for example Bekhorot 61a), only that side is rendered.
 
 The Vilna page is produced by the open-source [vilna-daf](https://github.com/eladraz/vilna-daf) viewer, in its default Aramaic edition, with the surrounding commentaries in place. The English pages are typeset from the [Sefaria](https://www.sefaria.org/) text API (`/api/texts/...`), using the William Davidson Edition. Dates are resolved through the [Sefaria calendar API](https://www.sefaria.org/api/calendars).
 

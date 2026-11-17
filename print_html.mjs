@@ -3,9 +3,9 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import { launchOptions } from './chrome.mjs';
 
-const [htmlPath, pdfPath, header, footerLabel, marginTop, marginBottom, marginLeft, marginRight] = process.argv.slice(2);
+const [htmlPath, pdfPath, header, footerLabel, marginTop, marginBottom, marginLeft, marginRight, footerSuffix] = process.argv.slice(2);
 if (!htmlPath || !pdfPath || !header || !footerLabel) {
-  console.error('Usage: node print_html.mjs HTML PDF HEADER FOOTER_LABEL [top] [bottom] [left] [right]');
+  console.error('Usage: node print_html.mjs HTML PDF HEADER FOOTER_LABEL [top] [bottom] [left] [right] [footerSuffix]');
   process.exit(1);
 }
 const margins = {
@@ -24,7 +24,7 @@ const headerTemplate = `
 const footerTemplate = `
   <div style="font-size:8pt; font-family: 'Liberation Serif', Times, serif; color:#333;
               width:100%; text-align:center; padding:0 12mm;">
-    ${footerLabel}, page <span class="pageNumber"></span> of <span class="totalPages"></span>
+    ${footerLabel}, page <span class="pageNumber"></span> of <span class="totalPages"></span>${footerSuffix || ''}
   </div>`;
 
 const browser = await chromium.launch(launchOptions());

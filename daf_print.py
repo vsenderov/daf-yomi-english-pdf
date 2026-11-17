@@ -180,9 +180,25 @@ def fetch_english_segments(sefaria_name, display_name, page, side):
     die('Failed to fetch English text from Sefaria:\n  ' + '\n  '.join(errors))
 
 
-def typeset_side(sefaria_name, display_name, page, side, workdir, font_dir, font_pt):
+def format_study_date(day):
+    """Return 'Daf Yomi, Tuesday 17 November 2026', or '' when there is no date."""
+    if day is None:
+        return ''
+    return f'Daf Yomi, {day.strftime("%A")} {day.day} {day.strftime("%B %Y")}'
+
+
+def with_study_date(base, day):
+    clause = format_study_date(day)
+    if not clause:
+        return base
+    return f'{base} · {clause}'
+
+
+def typeset_side(sefaria_name, display_name, page, side, workdir, font_dir, font_pt, day=None):
     label = f'{display_name} {page}{side}'
     header = f'{label}, English (William Davidson)'
+    footer_label = header
+    footer_suffix = with_study_date('', day)  # ' · Daf Yomi, ...' or ''
     ref, segs, meta = fetch_english_segments(sefaria_name, display_name, page, side)
     version = meta.get('versionTitle') or te.VERSION
     print(f'Fetched {ref}: {len(segs)} segments, version {version!r}', flush=True)
@@ -195,7 +211,7 @@ def typeset_side(sefaria_name, display_name, page, side, workdir, font_dir, font
     html_path.write_text(html, encoding='utf-8')
     cmd = [
         'node', str(PRINT_JS), str(html_path), str(pdf_path),
-        header, header, *te.PRINT_MARGINS,
+        header, footer_label, *te.PRINT_MARGINS, footer_suffix,
     ]
     try:
         subprocess.run(cmd, check=True, cwd=str(ROOT))
@@ -232,7 +248,7 @@ def render_vilna(vilna_name, page, sides, port, workdir):
     return paths
 
 
-def render_one(tractates, display_name, page, side_hint, out_dir, port, workdir, font_dir, font_pt):
+def render_one(tractates, display_name, page, side_hint, out_dir, port, workdir, font_dir, font_pt, day=None):
     info = resolve_tractate(display_name, tractates)
     sides = sides_for(info, page, side_hint)
     vilna_name = info['name_en']
@@ -244,8 +260,10 @@ def render_one(tractates, display_name, page, side_hint, out_dir, port, workdir,
     assemble_sides = []
     english_counts = []
     for side, vilna_path in zip(sides, vilna_paths):
-        en_path, n = typeset_side(sefaria_name, display_name, page, side, workdir, font_dir, font_pt)
-        label = f'{display_name} {page}{side}'
+        en_path, n = typeset_side(
+            sefaria_name, display_name, page, side, workdir, font_dir, font_pt, day=day,
+        )
+        label = with_study_date(f'{display_name} {page}{side}', day)
         assemble_sides.append({
             'label': label,
             'vilna_path': str(vilna_path),
@@ -368,6 +386,7 @@ def main(argv=None):
                 written.append(
                     render_one(
                         tractates, name, page, side, out_dir, port, workdir, font_dir, font_pt,
+                        day=day,
                     )
                 )
     finally:
