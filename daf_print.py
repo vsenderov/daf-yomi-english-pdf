@@ -33,6 +33,15 @@ PRINT_JS = ROOT / 'print_html.mjs'
 SEFARIA_CALENDAR = 'https://www.sefaria.org/api/calendars?year={year}&month={month}&day={day}'
 USER_AGENT = 'daf-yomi-english-pdf (https://github.com/vsenderov/daf-yomi-english-pdf)'
 
+# 15th Daf Yomi cycle: 2711 days, from 5 January 2020 to 7 June 2027 (Niddah 73a).
+CYCLE_START = dt.date(2020, 1, 5)
+CYCLE_LENGTH = 2711
+# After Me'ilah 22a the cycle studies Mishnah Kinnim (3 days), Tamid 26-33
+# (8 days), and Mishnah Middot (4 days). Those 15 days are not in
+# vilna-daf's tractates.json, but they must be skipped so later tractates
+# (Niddah) land on the correct civil date.
+POST_MEILAH_DAYS = 15
+
 # Sefaria calendar spellings that differ from vilna-daf's name_en.
 ALIASES = {
     'bekhorot': 'Bechorot',
@@ -99,15 +108,58 @@ def resolve_tractate(name, tractates):
 
 
 def sides_for(info, page, side_hint):
-    if side_hint in ('a', 'b'):
-        return [side_hint]
-    sides = ['a']
-    if page < info['last_page'] or info.get('ends_on_b', True):
-        sides.append('b')
     first = info.get('first_page', 2)
     if page < first or page > info['last_page']:
         die(f"{info['name_en']} has pages {first} to {info['last_page']}; got {page}.")
+    has_b = page < info['last_page'] or info.get('ends_on_b', True)
+    if side_hint == 'a':
+        return ['a']
+    if side_hint == 'b':
+        if not has_b:
+            die(f"{info['name_en']} {page} has no b-side.")
+        return ['b']
+    sides = ['a']
+    if has_b:
+        sides.append('b')
     return sides
+
+
+def study_date_for_daf(info, page, tractates):
+    """Return the civil date on which this daf is studied in the 15th cycle."""
+    first = info.get('first_page', 2)
+    last = info['last_page']
+    if page < first or page > last:
+        die(f"{info['name_en']} has pages {first} to {last}; got {page}.")
+
+    day = CYCLE_START
+    found = None
+    for tinfo in tractates:
+        t_first = tinfo.get('first_page', 2)
+        t_last = tinfo['last_page']
+        if tinfo is info or (
+            tinfo['name_en'] == info['name_en'] and tinfo['sefaria_name'] == info['sefaria_name']
+        ):
+            if t_first <= page <= t_last:
+                found = day + dt.timedelta(days=page - t_first)
+        day += dt.timedelta(days=t_last - t_first + 1)
+        if tinfo.get('sefaria_name') == 'Meilah' or tinfo.get('name_en') == 'Meilah':
+            day += dt.timedelta(days=POST_MEILAH_DAYS)
+
+    expected_end = CYCLE_START + dt.timedelta(days=CYCLE_LENGTH)
+    if day != expected_end:
+        # The walk should cover exactly 2711 days and land on the day after Niddah 73.
+        die(
+            f'Internal error: Daf Yomi cycle walk ended on {day.isoformat()}, '
+            f'expected {expected_end.isoformat()}.'
+        )
+    if found is None:
+        die(
+            f"{info['name_en']} {page} is not in the current Daf Yomi cycle "
+            f'({CYCLE_START.day} {CYCLE_START.strftime("%B %Y")} to '
+            f'{(CYCLE_START + dt.timedelta(days=CYCLE_LENGTH - 1)).day} '
+            f'{(CYCLE_START + dt.timedelta(days=CYCLE_LENGTH - 1)).strftime("%B %Y")}).'
+        )
+    return found
 
 
 def fetch_calendar(day):
@@ -332,7 +384,11 @@ def jobs_from_args(args, tractates):
     if args.daf:
         name, page, side = parse_daf_string(' '.join(args.daf))
         # Keep the user-facing spelling in the filename and footer.
-        return [(name, page, side, None)]
+        # Look up the study date of this daf in the current Daf Yomi cycle.
+        info = resolve_tractate(name, tractates)
+        sides_for(info, page, side)  # validate page and side before rendering
+        day = study_date_for_daf(info, page, tractates)
+        return [(name, page, side, day)]
     if len(args.dates) > 2:
         die('Pass zero, one, or two dates.')
     if not args.dates:
