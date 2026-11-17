@@ -1,0 +1,3 @@
+[submodule "vilna-daf"]
+	path = vilna-daf
+	url = https://github.com/eladraz/vilna-daf.git

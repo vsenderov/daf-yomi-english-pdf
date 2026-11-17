@@ -1,0 +1,11 @@
+{
+  "name": "daf-yomi-english-pdf",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Render Daf Yomi (English, William Davidson) as readable A4 PDFs using vilna-daf.",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}

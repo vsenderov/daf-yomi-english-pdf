@@ -1,0 +1,8 @@
+out/
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+playwright-report/
+test-results/
