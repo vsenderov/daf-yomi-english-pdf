@@ -19,7 +19,7 @@ SEFARIA_TEXT = (
 VERSION = 'William Davidson Edition - English'
 
 # Default typography for the English A4 pages.
-FONT_PT = 10
+FONT_PT = 9
 LINE_HEIGHT = 1.42
 PARA_GAP_EM = 0.42
 # top, bottom, left, right — passed to print_html.mjs

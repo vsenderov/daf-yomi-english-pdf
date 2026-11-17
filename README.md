@@ -3,7 +3,7 @@
 Render the daily Daf Yomi as a readable A4 PDF. Each daf is a linear sequence of pages:
 
 1. The classic Vilna page for amud a, enlarged to fill the sheet.
-2. The William Davidson English translation of the Gemara for amud a, typeset as a single column (10 point by default; see `--font-size`).
+2. The William Davidson English translation of the Gemara for amud a, typeset as a single column (9 point by default; see `--font-size`).
 3. The Vilna page for amud b.
 4. The English for amud b.
 
@@ -59,7 +59,7 @@ The first render needs a network connection, because vilna-daf and the English t
 # Choose the output directory (default: ./out)
 ./daf-print -o ~/Documents/daf
 
-# English body size in points (default: 10). Segment numbers and section
+# English body size in points (default: 9). Segment numbers and section
 # labels scale with it. The environment variable DAF_FONT_PT is used when
 # the flag is omitted.
 ./daf-print --font-size 9
@@ -76,7 +76,7 @@ Dates are civil dates in `YYYY-MM-DD` form. With no arguments, the tool uses tod
 | `CHROME_PATH` | Absolute path to a Chrome or Chromium binary. Overrides discovery. |
 | `CHROME_CHANNEL` | Playwright browser channel, for example `chrome` or `msedge`. Used only when `CHROME_PATH` is not set. |
 | `LIBERATION_FONT_DIR` | Directory containing `LiberationSerif-Regular.ttf`. Used for the English body if present; otherwise the browser falls back to Times. |
-| `DAF_FONT_PT` | English body size in points when `--font-size` is not given. The default is 10. |
+| `DAF_FONT_PT` | English body size in points when `--font-size` is not given. The default is 9. |
 
 Browser selection, in order: `CHROME_PATH`; `CHROME_CHANNEL`; a system install of Google Chrome or Chromium at a standard path (including `/Applications/Google Chrome.app` on macOS); otherwise the Chromium build that `./setup.sh` installed through Playwright.
 

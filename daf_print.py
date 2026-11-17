@@ -286,13 +286,13 @@ def parse_args(argv):
         metavar='PT',
         type=float,
         default=None,
-        help='English body size in points (default: 10, or DAF_FONT_PT if set)',
+        help='English body size in points (default: 9, or DAF_FONT_PT if set)',
     )
     return p.parse_args(argv)
 
 
 def resolve_font_pt(args):
-    """CLI --font-size wins; otherwise DAF_FONT_PT; otherwise 10."""
+    """CLI --font-size wins; otherwise DAF_FONT_PT; otherwise 9."""
     raw = args.font_size
     if raw is None:
         env = os.environ.get('DAF_FONT_PT')
