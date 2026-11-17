@@ -180,7 +180,7 @@ def fetch_english_segments(sefaria_name, display_name, page, side):
     die('Failed to fetch English text from Sefaria:\n  ' + '\n  '.join(errors))
 
 
-def typeset_side(sefaria_name, display_name, page, side, workdir, font_dir):
+def typeset_side(sefaria_name, display_name, page, side, workdir, font_dir, font_pt):
     label = f'{display_name} {page}{side}'
     header = f'{label}, English (William Davidson)'
     ref, segs, meta = fetch_english_segments(sefaria_name, display_name, page, side)
@@ -188,7 +188,7 @@ def typeset_side(sefaria_name, display_name, page, side, workdir, font_dir):
     print(f'Fetched {ref}: {len(segs)} segments, version {version!r}', flush=True)
     html = te.html_page(
         header, segs, font_dir=font_dir,
-        font_pt=te.FONT_PT, line_height=te.LINE_HEIGHT, para_gap_em=te.PARA_GAP_EM,
+        font_pt=font_pt, line_height=te.LINE_HEIGHT, para_gap_em=te.PARA_GAP_EM,
     )
     html_path = workdir / f'{display_name.replace(" ", "_")}-{page}{side}.html'
     pdf_path = workdir / f'{display_name.replace(" ", "_")}-{page}{side}-en.pdf'
@@ -206,7 +206,7 @@ def typeset_side(sefaria_name, display_name, page, side, workdir, font_dir):
     doc = f.open(pdf_path)
     n = doc.page_count
     doc.close()
-    print(f'Typeset {label}: {n} A4 page{"s" if n != 1 else ""} at {te.FONT_PT} pt', flush=True)
+    print(f'Typeset {label}: {n} A4 page{"s" if n != 1 else ""} at {font_pt} pt', flush=True)
     return pdf_path, n
 
 
@@ -232,7 +232,7 @@ def render_vilna(vilna_name, page, sides, port, workdir):
     return paths
 
 
-def render_one(tractates, display_name, page, side_hint, out_dir, port, workdir, font_dir):
+def render_one(tractates, display_name, page, side_hint, out_dir, port, workdir, font_dir, font_pt):
     info = resolve_tractate(display_name, tractates)
     sides = sides_for(info, page, side_hint)
     vilna_name = info['name_en']
@@ -244,7 +244,7 @@ def render_one(tractates, display_name, page, side_hint, out_dir, port, workdir,
     assemble_sides = []
     english_counts = []
     for side, vilna_path in zip(sides, vilna_paths):
-        en_path, n = typeset_side(sefaria_name, display_name, page, side, workdir, font_dir)
+        en_path, n = typeset_side(sefaria_name, display_name, page, side, workdir, font_dir, font_pt)
         label = f'{display_name} {page}{side}'
         assemble_sides.append({
             'label': label,
@@ -281,7 +281,31 @@ def parse_args(argv):
         help='a specific daf, for example: Bekhorot 60, or Bava Metzia 10',
     )
     p.add_argument('-o', '--output-dir', default='./out', help='output directory (default: ./out)')
+    p.add_argument(
+        '--font-size',
+        metavar='PT',
+        type=float,
+        default=None,
+        help='English body size in points (default: 10, or DAF_FONT_PT if set)',
+    )
     return p.parse_args(argv)
+
+
+def resolve_font_pt(args):
+    """CLI --font-size wins; otherwise DAF_FONT_PT; otherwise 10."""
+    raw = args.font_size
+    if raw is None:
+        env = os.environ.get('DAF_FONT_PT')
+        if env:
+            try:
+                raw = float(env)
+            except ValueError:
+                die(f'Invalid DAF_FONT_PT {env!r}. Use a number such as 10 or 9.')
+        else:
+            raw = te.FONT_PT
+    if raw <= 0:
+        die(f'Font size must be a positive number of points; got {raw}.')
+    return raw
 
 
 def jobs_from_args(args, tractates):
@@ -326,6 +350,7 @@ def ensure_ready():
 def main(argv=None):
     args = parse_args(argv)
     ensure_ready()
+    font_pt = resolve_font_pt(args)
     tractates = load_tractates()
     jobs = jobs_from_args(args, tractates)
     out_dir = Path(args.output_dir).expanduser().resolve()
@@ -341,7 +366,9 @@ def main(argv=None):
                 if day is not None:
                     print(f'--- {day.isoformat()}: {name} {page}{side} ---', flush=True)
                 written.append(
-                    render_one(tractates, name, page, side, out_dir, port, workdir, font_dir)
+                    render_one(
+                        tractates, name, page, side, out_dir, port, workdir, font_dir, font_pt,
+                    )
                 )
     finally:
         httpd.shutdown()
