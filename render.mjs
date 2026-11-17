@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import fs from 'fs';
+import { launchOptions } from './chrome.mjs';
 
 const [port, tractate, page, out, sidesArg] = process.argv.slice(2);
 if (!port || !tractate || !page || !out) {
@@ -8,45 +8,17 @@ if (!port || !tractate || !page || !out) {
 }
 
 const sides = (sidesArg || 'a,b').split(',').map(s => s.trim()).filter(Boolean);
-const settings = JSON.stringify({ edition: 'english' });
+const settings = JSON.stringify({ edition: 'aramaic' });
 
+// Print the page-sheet at its native size. The assembler later clips the
+// stroked frame and scales it up to fill an A4 sheet. Disabling the viewer's
+// print transform avoids shrinking the daf to the Letter-intersect-A4 safe
+// area and then enlarging it again.
 const PRINT_CSS = `@media print {
   @page { margin: 0 }
   #daf-content { width: auto !important; height: auto !important; position: static !important; margin: 0 !important; overflow: visible !important }
   .page-sheet { transform: none !important; position: static !important; margin: 20px auto !important }
 }`;
-
-const CHROME_CANDIDATES = {
-  darwin: [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  ],
-  linux: [
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-  ],
-};
-
-function launchOptions() {
-  if (process.env.CHROME_PATH) {
-    console.log('Using CHROME_PATH', process.env.CHROME_PATH);
-    return { executablePath: process.env.CHROME_PATH };
-  }
-  if (process.env.CHROME_CHANNEL) {
-    console.log('Using CHROME_CHANNEL', process.env.CHROME_CHANNEL);
-    return { channel: process.env.CHROME_CHANNEL };
-  }
-  for (const p of CHROME_CANDIDATES[process.platform] || []) {
-    if (fs.existsSync(p)) {
-      console.log('Using Chrome at', p);
-      return { executablePath: p };
-    }
-  }
-  console.log('Using Playwright Chromium');
-  return {};
-}
 
 const browser = await chromium.launch(launchOptions());
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 1800 } });
@@ -62,9 +34,10 @@ try {
       return c && c._vilnaResult;
     }, null, { timeout: 90000 });
     await pg.evaluate(() => document.fonts.ready);
+    // The catchword is filled in asynchronously after the main layout.
     await pg.waitForTimeout(1500);
     await pg.emulateMedia({ media: 'print' });
-    await pg.waitForTimeout(1500);
+    await pg.waitForTimeout(500);
     const r = await pg.evaluate(() => {
       const e = document.querySelector('.page-sheet');
       if (!e) throw new Error('missing .page-sheet');
@@ -78,20 +51,7 @@ try {
       height: `${Math.ceil(r[1] + 44)}px`,
       printBackground: true,
     });
-    const geo = await pg.evaluate(() => {
-      const o = {};
-      for (const q of ['.page-sheet', '.daf-header', '.daf-footer', '.catchword', '.daf-bottom-strip']) {
-        const e = document.querySelector(q);
-        if (e) {
-          const b = e.getBoundingClientRect();
-          o[q] = [b.left, b.top + scrollY, b.right, b.bottom + scrollY];
-        }
-      }
-      return o;
-    });
-    fs.writeFileSync(`${out}-${side}.json`, JSON.stringify(geo));
-    console.log(side, r);
-    console.log(side, 'ok');
+    console.log(side, r, 'ok');
     await pg.close();
   }
 } finally {

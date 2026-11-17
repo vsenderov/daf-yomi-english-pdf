@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Render Daf Yomi (English, William Davidson) as readable A4 PDFs using vilna-daf.",
+  "description": "Render Daf Yomi as A4 PDFs: the classic Vilna page, then the William Davidson English Gemara.",
   "license": "MIT",
   "dependencies": {
     "playwright": "^1.60.0"

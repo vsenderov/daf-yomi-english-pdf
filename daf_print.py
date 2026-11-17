@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render Daf Yomi pages as readable A4 PDFs in the English William Davidson edition."""
+"""Render Daf Yomi as a readable A4 PDF: Vilna page, then English Gemara."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import http.server
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -19,12 +20,16 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import split_a4
+import pymupdf as f
+
+import assemble
+import typeset_english as te
 
 ROOT = Path(__file__).resolve().parent
 VILNA = ROOT / 'vilna-daf'
 TRACTATES_PATH = VILNA / 'data' / 'tractates.json'
 RENDER_JS = ROOT / 'render.mjs'
+PRINT_JS = ROOT / 'print_html.mjs'
 SEFARIA_CALENDAR = 'https://www.sefaria.org/api/calendars?year={year}&month={month}&day={day}'
 USER_AGENT = 'daf-yomi-english-pdf (https://github.com/vsenderov/daf-yomi-english-pdf)'
 
@@ -147,53 +152,125 @@ def output_stem(display_name, page, sides):
     return f'{safe}-{page}{sides[0]}-english'
 
 
-def render_one(tractates, display_name, page, side_hint, out_dir, port, workdir):
-    info = resolve_tractate(display_name, tractates)
-    sides = sides_for(info, page, side_hint)
-    vilna_name = info['name_en']
+def copy_fonts(workdir):
+    src = te.find_liberation_dir()
+    if not src:
+        return None
+    dest = workdir / 'fonts'
+    dest.mkdir(exist_ok=True)
+    copied = False
+    for fn in src.glob('LiberationSerif-*.ttf'):
+        shutil.copy(fn, dest / fn.name)
+        copied = True
+    return dest if copied else None
+
+
+def fetch_english_segments(sefaria_name, display_name, page, side):
+    """Fetch William Davidson English text, trying Sefaria and display names."""
+    errors = []
+    for name in (sefaria_name, display_name):
+        if not name:
+            continue
+        ref = f'{name}.{page}{side}'
+        try:
+            segs, meta = te.fetch_text(ref)
+            return ref, segs, meta
+        except Exception as e:
+            errors.append(f'{ref}: {e}')
+    die('Failed to fetch English text from Sefaria:\n  ' + '\n  '.join(errors))
+
+
+def typeset_side(sefaria_name, display_name, page, side, workdir, font_dir):
+    label = f'{display_name} {page}{side}'
+    header = f'{label}, English (William Davidson)'
+    ref, segs, meta = fetch_english_segments(sefaria_name, display_name, page, side)
+    version = meta.get('versionTitle') or te.VERSION
+    print(f'Fetched {ref}: {len(segs)} segments, version {version!r}', flush=True)
+    html = te.html_page(
+        header, segs, font_dir=font_dir,
+        font_pt=te.FONT_PT, line_height=te.LINE_HEIGHT, para_gap_em=te.PARA_GAP_EM,
+    )
+    html_path = workdir / f'{display_name.replace(" ", "_")}-{page}{side}.html'
+    pdf_path = workdir / f'{display_name.replace(" ", "_")}-{page}{side}-en.pdf'
+    html_path.write_text(html, encoding='utf-8')
+    cmd = [
+        'node', str(PRINT_JS), str(html_path), str(pdf_path),
+        header, header, *te.PRINT_MARGINS,
+    ]
+    try:
+        subprocess.run(cmd, check=True, cwd=str(ROOT))
+    except FileNotFoundError:
+        die('node is not on PATH. Install Node.js and run ./setup.sh.')
+    except subprocess.CalledProcessError as e:
+        die(f'print_html.mjs failed with exit code {e.returncode}.')
+    doc = f.open(pdf_path)
+    n = doc.page_count
+    doc.close()
+    print(f'Typeset {label}: {n} A4 page{"s" if n != 1 else ""} at {te.FONT_PT} pt', flush=True)
+    return pdf_path, n
+
+
+def render_vilna(vilna_name, page, sides, port, workdir):
     prefix = workdir / f'{vilna_name.replace(" ", "_")}-{page}'
     cmd = [
-        'node',
-        str(RENDER_JS),
-        str(port),
-        vilna_name,
-        str(page),
-        str(prefix),
+        'node', str(RENDER_JS),
+        str(port), vilna_name, str(page), str(prefix),
         ','.join(sides),
     ]
-    env = os.environ.copy()
-    shown = ' and '.join(f'{display_name} {page}{s}' for s in sides)
-    print(f'Rendering {shown} ...', flush=True)
     try:
-        subprocess.run(cmd, check=True, cwd=str(ROOT), env=env)
+        subprocess.run(cmd, check=True, cwd=str(ROOT))
     except FileNotFoundError:
         die('node is not on PATH. Install Node.js and run ./setup.sh.')
     except subprocess.CalledProcessError as e:
         die(f'render.mjs failed with exit code {e.returncode}.')
-
-    side_args = []
-    labels = []
+    paths = []
     for side in sides:
         pdf = Path(f'{prefix}-{side}.pdf')
-        geo = Path(f'{prefix}-{side}.json')
-        if not pdf.is_file() or not geo.is_file():
-            die(f'Missing render output for side {side}: {pdf} / {geo}')
+        if not pdf.is_file():
+            die(f'Missing Vilna render for side {side}: {pdf}')
+        paths.append(pdf)
+    return paths
+
+
+def render_one(tractates, display_name, page, side_hint, out_dir, port, workdir, font_dir):
+    info = resolve_tractate(display_name, tractates)
+    sides = sides_for(info, page, side_hint)
+    vilna_name = info['name_en']
+    sefaria_name = info.get('sefaria_name') or vilna_name
+    shown = ' and '.join(f'{display_name} {page}{s}' for s in sides)
+    print(f'Rendering {shown} ...', flush=True)
+
+    vilna_paths = render_vilna(vilna_name, page, sides, port, workdir)
+    assemble_sides = []
+    english_counts = []
+    for side, vilna_path in zip(sides, vilna_paths):
+        en_path, n = typeset_side(sefaria_name, display_name, page, side, workdir, font_dir)
         label = f'{display_name} {page}{side}'
-        side_args.append((str(pdf), str(geo), label))
-        labels.append(label)
+        assemble_sides.append({
+            'label': label,
+            'vilna_path': str(vilna_path),
+            'english_path': str(en_path),
+        })
+        english_counts.append((label, n))
 
     dest = out_dir / f'{output_stem(display_name, page, sides)}.pdf'
-    counts = split_a4.merge(str(dest), side_args)
-    total = sum(counts)
-    detail = ', '.join(f'{lab} {n}' for lab, n in zip(labels, counts))
-    print(f'Wrote {dest} ({total} A4 page{"s" if total != 1 else ""}; {detail})', flush=True)
+    stem_label = f'{display_name} {page}'
+    total, _details = assemble.assemble(str(dest), assemble_sides, label=stem_label)
+    detail = ', '.join(f'{lab} {n}' for lab, n in english_counts)
+    print(
+        f'Wrote {dest} ({total} A4 page{"s" if total != 1 else ""}; English: {detail})',
+        flush=True,
+    )
     return dest, total
 
 
 def parse_args(argv):
     p = argparse.ArgumentParser(
         prog='daf-print',
-        description='Render Daf Yomi (English, William Davidson) as A4 PDFs.',
+        description=(
+            'Render Daf Yomi as an A4 PDF: the classic Vilna page, then the '
+            'William Davidson English translation of the Gemara.'
+        ),
         epilog='With no arguments, print today\'s Daf Yomi. Pass one date, or a start and end date.',
     )
     p.add_argument('dates', nargs='*', help='YYYY-MM-DD, or a start and end date')
@@ -241,6 +318,9 @@ def ensure_ready():
         )
     if not (ROOT / 'node_modules' / 'playwright').exists():
         die('Playwright is not installed. Run ./setup.sh first.')
+    for path in (RENDER_JS, PRINT_JS):
+        if not path.is_file():
+            die(f'Missing {path.name}. The repository may be incomplete.')
 
 
 def main(argv=None):
@@ -256,10 +336,13 @@ def main(argv=None):
     try:
         with tempfile.TemporaryDirectory(prefix='daf-print-') as tmp:
             workdir = Path(tmp)
+            font_dir = copy_fonts(workdir)
             for name, page, side, day in jobs:
                 if day is not None:
                     print(f'--- {day.isoformat()}: {name} {page}{side} ---', flush=True)
-                written.append(render_one(tractates, name, page, side, out_dir, port, workdir))
+                written.append(
+                    render_one(tractates, name, page, side, out_dir, port, workdir, font_dir)
+                )
     finally:
         httpd.shutdown()
         httpd.server_close()
